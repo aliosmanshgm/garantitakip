@@ -17,6 +17,6 @@ window.GT_CONFIG = {
     projectNumber: '565168900553'
   },
   // Required for single-user login. Set this to your personal Google login email.
-  allowedEmail: 'YOUR_GOOGLE_EMAIL@gmail.com',
+  allowedEmail: 'aliosmanshgm@gmail.com',
   maxUploadMB: 25
 };
