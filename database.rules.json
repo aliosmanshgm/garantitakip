@@ -1,0 +1,15 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid && auth.uid === 'REPLACE_WITH_YOUR_FIREBASE_UID' && auth.token.email === 'YOUR_GOOGLE_EMAIL@gmail.com' && auth.token.email_verified === true",
+        ".write": "auth != null && auth.uid === $uid && auth.uid === 'REPLACE_WITH_YOUR_FIREBASE_UID' && auth.token.email === 'YOUR_GOOGLE_EMAIL@gmail.com' && auth.token.email_verified === true",
+        "records": {
+          ".validate": "newData.hasChildren(['schemaVersion','settings']) || !newData.exists()"
+        }
+      }
+    },
+    ".read": false,
+    ".write": false
+  }
+}
