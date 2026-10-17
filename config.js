@@ -12,8 +12,8 @@ window.GT_CONFIG = {
     appId: '1:565168900553:web:c6109b3a9a77b6026d8018'
   },
   google: {
-    clientId: 'GOOGLE_OAUTH_WEB_CLIENT_ID.apps.googleusercontent.com',
-    pickerApiKey: 'GOOGLE_PICKER_API_KEY',
+    clientId: '565168900553-fs8sejvijbcjo73i7n9ip8e9ekn5b1de.apps.googleusercontent.com',
+    pickerApiKey: 'AIzaSyC8hU3cKA2ZK8Mzz-grkh2JAgyYYhcNTPc',
     projectNumber: '565168900553'
   },
   // Required for single-user login. Set this to your personal Google login email.
