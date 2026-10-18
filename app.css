@@ -31,3 +31,10 @@
   .list-card.warranty-card .warranty-actions{flex:1 1 100%;width:100%;margin-left:49px;justify-content:flex-start}
   .list-card.warranty-card .warranty-actions .tag{margin-right:auto}
 }
+/* Faz 5: archive actions and preview of Drive file rename operations */
+.setting-actions{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;align-items:center;max-width:220px}
+.bulk-preview{display:grid;gap:10px;max-height:360px;overflow:auto;margin:16px 0;padding-right:3px}
+.bulk-row{border:1px solid var(--line,#e5e9ed);border-radius:10px;background:var(--panel,#f8fafb);padding:10px 12px;display:grid;gap:5px;overflow-wrap:anywhere}
+.bulk-row small{color:var(--muted,#6b7b87);font-size:12px}
+.bulk-row strong{font-size:13px;line-height:1.45}
+@media(max-width:640px){.setting-actions{max-width:170px}.bulk-preview{max-height:48vh}}

@@ -39,3 +39,16 @@ export function renamedDocumentFilename(enteredName, previousName, mimeType) {
   // Users edit only the stem. The original extension is never removed/changed.
   return readablePart(raw,160,'Belge')+extension;
 }
+
+// Deterministic names for older Drive uploads. No new file ID is created.
+export function historicalUploadName({document, productName}) {
+  if(!document?.driveFileId) throw new Error('Drive dosya kimliği bulunamadı.');
+  const rawDate=String(document.documentDate||document.createdAt||'').slice(0,10);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(rawDate))throw new Error('Belgenin tarihi yok. Önce belgeyi tek tek düzenleyin.');
+  const rawId=String(document.id||document.driveFileId);
+  // Stable, non-secret disambiguator. Unrelated to the Drive file ID.
+  let hash=2166136261;
+  for (let i=0;i<rawId.length;i++){hash^=rawId.charCodeAt(i);hash=Math.imul(hash,16777619);}
+  const code=(hash>>>0).toString(16).toUpperCase().padStart(8,'0');
+  return makeDocumentFilename({productName,documentDate:rawDate,kind:document.kind||'Belge',description:document.description||'',fileName:document.name||document.originalName,mimeType:document.mimeType||'',uniqueCode:code});
+}

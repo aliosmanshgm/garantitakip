@@ -1,11 +1,11 @@
 /* GarantiTakip - Faz 3. Firebase + Drive, checked restores and record integrity. */
 import {validateBackup} from './integrity.js';
-import {makeDocumentFilename, filenameParts, renamedDocumentFilename} from './filename.js';
+import {makeDocumentFilename, filenameParts, renamedDocumentFilename, historicalUploadName} from './filename.js';
 (() => {
   'use strict';
   const services=window.GTServices;
   const cloud=services.cloud,drive=services.drive;
-  let ready=false, busy=false, committed=null, pickedDriveFile=null, checkingDocuments=false, stagedUpload=null;
+  let ready=false, busy=false, committed=null, pickedDriveFile=null, checkingDocuments=false, stagedUpload=null, bulkNaming=false;
   const emptyDb=()=>({schemaVersion:2,products:[],purchases:[],warranties:[],serviceCases:[],serviceEvents:[],documents:[],documentLinks:[],reminders:[],settings:{warningDays:[90,30,7]}});
   const clone=x=>JSON.parse(JSON.stringify(x));
   const ICONS = {
@@ -208,16 +208,16 @@ import {makeDocumentFilename, filenameParts, renamedDocumentFilename} from './fi
       toast(`Drive belge kontrolü: ${ok} erişilebilir, ${unavailable} erişilemiyor, ${failed} kontrol hatası.`,unavailable||failed?'warn':'success');
     }finally{checkingDocuments=false;}
   }
-  function documentsPage(){let docs=[...db.documents].sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));if(ui.docFilter!=='all')docs=docs.filter(d=>d.kind===ui.docFilter);const q=ui.docSearch.toLocaleLowerCase('tr-TR').trim();if(q)docs=docs.filter(d=>[d.name,d.kind].some(t=>String(t||'').toLocaleLowerCase('tr-TR').includes(q)));return `${titleHeader('Kanıt ve evraklar','Belge Arşivi',`${db.documents.length} Drive belge kaydı`,btn(`${icon('refresh-cw')} Erişimi kontrol et`,'verify-documents','','btn-secondary')+btn(`${icon('plus')} Belge ilişkilendir`,'new-document','','btn-primary'))}
+  function documentsPage(){let docs=[...db.documents].sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));if(ui.docFilter!=='all')docs=docs.filter(d=>d.kind===ui.docFilter);const q=ui.docSearch.toLocaleLowerCase('tr-TR').trim();if(q)docs=docs.filter(d=>[d.name,d.kind].some(t=>String(t||'').toLocaleLowerCase('tr-TR').includes(q)));return `${titleHeader('Kanıt ve evraklar','Belge Arşivi',`${db.documents.length} Drive belge kaydı`,btn(`${icon('refresh-cw')} Erişimi kontrol et`,'verify-documents','','btn-secondary')+btn(`${icon('edit')} Eski belgeleri adlandır`,'bulk-names','','btn-secondary')+btn(`${icon('plus')} Belge ilişkilendir`,'new-document','','btn-primary'))}
     <div class="info-strip" style="margin-bottom:18px">${icon('cloud-off')} Drive bağlantısı varsa «Erişimi kontrol et» ile kayıtların durumunu doğrulayabilirsiniz. Erişilemiyor işareti dosyanın silindiğini kesin olarak göstermez. Yüklenen dosyalar özel Google Drive alanınızda saklanır. Belge açmak ve yüklemek için Drive bağlantısı gerekebilir.</div><div class="toolbar"><label class="searchbox">${icon('search')}<input id="docSearch" type="search" value="${escape(ui.docSearch)}" placeholder="Belge adı veya türü ara" aria-label="Belgelerde ara"></label><select id="docFilter" class="filter-select" aria-label="Belge türü filtresi"><option value="all">Tüm belge türleri</option>${choices(OPTIONS.documentKinds,ui.docFilter,null)}</select></div><div class="panel"><div class="panel-head"><h3 class="panel-title">Tüm belgeler</h3><span class="subtle">${docs.length} sonuç</span></div>${docs.length?docs.map(documentRow).join(''):simpleEmpty('files','Belge bulunamadı','Dosya ekleyebilir veya filtreleri değiştirebilirsiniz.')}</div>`;}
   function remindersPage(){const alerts=actionableReminders();return `${titleHeader('Uyarılar ve takip','Hatırlatmalar',`Uygulama açıldığında hesaplanan ${alerts.length} dikkat gerektiren kayıt`,btn(`${icon('plus')} Hatırlatma ekle`,'new-reminder','','btn-primary'))}
     <div class="info-strip" style="margin-bottom:20px">${icon('info')} Henüz arka plan servisi yoktur. Bu uyarılar yalnızca uygulamayı açtığınızda veya sayfa içindeki işlemler sonrasında hesaplanır.</div>
     <div class="panel"><div class="panel-head"><div><h3 class="panel-title">Yaklaşan tarihler</h3><p class="panel-desc">Garanti için 90 gün, servis ve özel hatırlatmalar için 30 gün penceresi</p></div></div>${alerts.length?alerts.map(a=>`<div class="reminder-card"><span class="reminder-indicator">${icon(a.type==='warranty'?'shield-check':a.type==='service'?'wrench':'bell')}</span><div class="grow"><h3>${escape(a.title)}</h3><p>${escape(a.detail)}</p></div>${tag(dateRelative(a.days),a.days<=7?'bad':'warn')}<button class="icon-button" title="İlgili kayda git" data-action="goto" data-route-to="${a.type==='service'?'case':a.productId?'detail':'reminders'}" data-id="${escape(a.caseId||a.productId||'')}">${icon('chevron-right')}</button>${a.type==='manual'?`<button class="icon-button" title="Tamamla" data-action="complete-reminder" data-rid="${escape(a.id)}">${icon('check-circle')}</button>`:''}</div>`).join(''):simpleEmpty('check-circle','Şimdilik bir uyarı yok','Biten garantiler ve yaklaşan servis takipleri burada görünecek.')}</div>
     <p class="fineprint">Garanti bitişi 90 gün veya daha az olan aktif ürünler gösterilir. Süresi dolmuş garantiler Ürünlerim filtresinde yer alır.</p>`;}
   function settingsPage(){const user=cloud?.user();const driveOn=!!drive?.connected();return `${titleHeader('Hesap ve sistem','Ayarlar','Google hesabı, Drive bağlantısı ve veri yedekleme')}
-    <div class="two-cols"><section class="panel"><div class="panel-head"><h3 class="panel-title">Hesap ve bağlantılar</h3></div><div class="setting-row"><div><h3>Google hesabı</h3><p>${escape(user?.email||'Bağlı değil')} · UID: ${escape(user?.uid||'—')}</p></div>${tag('Doğrulandı','good')}</div><div class="setting-row"><div><h3>Google Drive</h3><p>${driveOn?'Aynı Google hesabı doğrulandı; dosyalara erişebilirsiniz.':'Dosya yüklemek veya seçmek için Drive bağlantısını etkinleştirin.'}</p></div>${driveOn?tag('Bağlı','good'):btn(`${icon('folder-open')} Drive'ı bağla`,'connect-drive','','btn-sm btn-primary')}</div><div class="setting-row"><div><h3>Firebase Realtime Database</h3><p>Gerçek kayıtlar kullanıcı UID altında saklanır.</p></div>${tag('Bulutta','good')}</div><div class="setting-row"><div><h3>Oturum</h3><p>Google oturumundan çıkış yapabilirsiniz.</p></div>${btn('Çıkış yap','sign-out','','btn-sm')}</div></section>
+    <div class="two-cols"><section class="panel"><div class="panel-head"><h3 class="panel-title">Hesap ve bağlantılar</h3></div><div class="setting-row"><div><h3>Google hesabı</h3><p>${escape(user?.email||'Bağlı değil')} · UID: ${escape(user?.uid||'—')}</p></div>${tag('Doğrulandı','good')}</div><div class="setting-row"><div><h3>Google Drive</h3><p>${driveOn?'Aynı Google hesabı doğrulandı; dosyalara erişebilirsiniz.':'Dosya yüklemek veya seçmek için Drive bağlantısını etkinleştirin.'}</p></div>${driveOn?tag('Bağlı','good'):btn(`${icon('folder-open')} Drive'ı bağla`,'connect-drive','','btn-sm btn-primary')}</div><div class="setting-row"><div><h3>Drive arşiv klasörü</h3><p>${db.settings.driveRootId?`Arşiv: ${escape(db.settings.driveRootName||'GarantiTakip')}${db.settings.driveParentName?` · Üst klasör: ${escape(db.settings.driveParentName)}`:''}`:'İlk dosya yüklemesinde GarantiTakip klasörü oluşturulur.'} · Faturalar ve ürün belgeleri bunun altında tutulur.</p></div><div class="setting-actions">${btn('Klasörü aç','open-archive','','btn-sm')}${btn('Konum değiştir','change-archive-folder','','btn-sm')}${btn('Adını değiştir','rename-archive-folder','','btn-sm')}</div></div><div class="setting-row"><div><h3>Firebase Realtime Database</h3><p>Gerçek kayıtlar kullanıcı UID altında saklanır.</p></div>${tag('Bulutta','good')}</div><div class="setting-row"><div><h3>Oturum</h3><p>Google oturumundan çıkış yapabilirsiniz.</p></div>${btn('Çıkış yap','sign-out','','btn-sm')}</div></section>
     <section class="panel"><div class="panel-head"><h3 class="panel-title">Veri yönetimi</h3></div><div class="setting-row"><div><h3>JSON yedeğini indir</h3><p>Ürün, garanti, servis ve Drive dosya referanslarını içerir; PDF içermez.</p></div>${btn(`${icon('download')} Dışa aktar`,'export-json','','btn-sm')}</div><div class="setting-row"><div><h3>JSON yedeğini içe aktar</h3><p>İsteğe bağlı geri yükleme; mevcut bulut kayıtlarının üzerine yazar.</p></div>${btn(`${icon('upload')} İçe aktar`,'import-json','','btn-sm')}</div><div class="info-strip">${icon('info')} JSON dosyası seri numaraları ve fatura bilgileri içerir; güvenli yerde saklayın. Drive belgeleri ayrıca yedeklenmelidir.</div></section></div>
-    <section class="panel" style="margin-top:18px"><div class="panel-head"><h3 class="panel-title">Sürüm ve kapsam</h3>${tag('Faz 3','blue')}</div><div class="kv-grid">${[['Arayüz','HTML + CSS + JavaScript'],['Kimlik doğrulama','Firebase Google Auth'],['Veritabanı','Firebase Realtime Database'],['Dosyalar','Google Drive API + Google Picker'],['Dosya yetkisi','drive.file (kısıtlı erişim)'],['Yedekleme','JSON dışa aktarma / geri yükleme'],['Sürüm','Faz 3 Güvenilirlik']].map(([a,b])=>`<div class="kv"><label>${a}</label><p>${escape(b)}</p></div>`).join('')}</div></section>`;}
+    <section class="panel" style="margin-top:18px"><div class="panel-head"><h3 class="panel-title">Sürüm ve kapsam</h3>${tag('Faz 5','blue')}</div><div class="kv-grid">${[['Arayüz','HTML + CSS + JavaScript'],['Kimlik doğrulama','Firebase Google Auth'],['Veritabanı','Firebase Realtime Database'],['Dosyalar','Google Drive API + Google Picker'],['Dosya yetkisi','drive.file (kısıtlı erişim)'],['Yedekleme','JSON dışa aktarma / geri yükleme'],['Sürüm','Faz 5 Drive Arşiv Yönetimi']].map(([a,b])=>`<div class="kv"><label>${a}</label><p>${escape(b)}</p></div>`).join('')}</div></section>`;}
   const field=(name,label,value='',type='text',attrs='',span='')=>`<div class="field ${span}"><label for="f_${name}">${label}</label><input id="f_${name}" name="${name}" type="${type}" ${attrs} value="${escape(value)}"></div>`;
   const selectField=(name,label,list,current='',blank='Seçiniz',span='')=>`<div class="field ${span}"><label for="f_${name}">${label}</label><select id="f_${name}" name="${name}">${choices(list,current,blank)}</select></div>`;
   const textareaField=(name,label,value='',span='span-2')=>`<div class="field ${span}"><label for="f_${name}">${label}</label><textarea id="f_${name}" name="${name}" rows="3">${escape(value)}</textarea></div>`;
@@ -267,6 +267,84 @@ import {makeDocumentFilename, filenameParts, renamedDocumentFilename} from './fi
     const body=`<form id="renameDocumentForm" data-form="rename-document" data-doc-id="${escape(d.id)}"><div class="form-grid">${field('nameBase','Yeni dosya adı',base,'text','required maxlength="160"','span-2')}</div><p class="fineprint">Dosya uzantısı (${escape(extension||'uzantısız')}) değiştirilmeyecek. Yeniden adlandırma Google Drive üzerinde de yapılır. ${linked.length>1?`${linked.length} ürün/servis bağlantısı aynı dosyaya işaret ediyor; değişiklik hepsine yansır.`:'Dosya içeriği ve bağlantıları korunur.'}</p></form>`;
     showModal('Drive Dosyasını Yeniden Adlandır',body,footer('renameDocumentForm','Dosya adını güncelle'),'','Mevcut dosya: '+d.name);
   }
+  function bulkRenameCandidates() {
+    // Only documents uploaded by GarantiTakip. External Picker documents are never modified in bulk.
+    const items=[];
+    for(const d of db.documents){
+      if(d.source!=='drive-upload'||!d.driveFileId)continue;
+      const linked=db.documentLinks.find(l=>l.documentId===d.id);
+      const p=linked&&getProduct(linked.productId);
+      if(!p)continue;
+      try{
+        const proposed=historicalUploadName({document:d,productName:p.name});
+        // Leave names generated by the current application as-is, rather than appending a second code.
+        if(d.name===proposed||/ - [A-F0-9]{8,12}\.[a-z0-9]{1,10}$/i.test(d.name))continue;
+        items.push({id:d.id,previous:d.name,proposed});
+      }catch(err){ /* Unknown extension/date: user may rename individually. */ }
+    }
+    return items;
+  }
+  function bulkNamesPreview(){
+    const items=bulkRenameCandidates().slice(0,20);
+    if(!items.length){toast('Standart ada dönüştürülecek eski uygulama yüklemesi yok. Drive’dan bağlanan dosyalar için Belge Bilgileri > Yeniden adlandır kullanın.','warn');return;}
+    const body=`<p class="fineprint">Yalnızca GarantiTakip ile yüklenen eski dosyalar işlenir. Önceki Drive'dan seçilen dış belgeler etkilenmez. Her dosyanın kimliği ve ürün bağlantıları korunur. Bir işlem başarısız olursa yapılanlar geri alınmaz; kalan belgeler daha sonra tekrar denenebilir.</p><div class="bulk-preview">${items.map(item=>`<div class="bulk-row"><small>${escape(item.previous)}</small><strong>→ ${escape(item.proposed)}</strong></div>`).join('')}</div><p class="fineprint">Bu turda ${items.length} belge işlenecek (en fazla 20). Dosyalar taşınmayacak veya silinmeyecek.</p>`;
+    showModal('Eski Drive Dosyaları — Ad Önizlemesi',body,`${btn('Vazgeç','close-modal')}${btn('Bu isimlerle güncelle','bulk-names-confirm','','btn-primary')}`,'wide');
+  }
+  async function bulkNamesApply(){
+    if(bulkNaming)throw Error('Toplu adlandırma zaten devam ediyor.');
+    if(!drive.connected())throw Error('Önce Google Drive hesabını bağlayın.');
+    const items=bulkRenameCandidates().slice(0,20);
+    if(!items.length){closeModal();toast('Adlandırılacak belge kalmadı.');return;}
+    if(!window.confirm(`${items.length} dosyanın Drive adı güncellenecek. Devam edilsin mi?`))return;
+    bulkNaming=true;closeModal();let changed=0,failed=0;
+    try{
+      for(const item of items){
+        const d=db.documents.find(x=>x.id===item.id);
+        if(!d)continue;
+        try{
+          const current=await drive.getMetadata(d.driveFileId);
+          if(current.trashed)throw new Error('Dosya Drive çöp kutusunda.');
+          if(current.name!==d.name)throw new Error('Drive dosya adı uygulamadakinden farklı; önce tekil belge bilgisini kontrol edin.');
+          const meta=await drive.renameFile(d.driveFileId,item.proposed);
+          d.name=meta.name;d.renamedAt=new Date().toISOString();
+          await persist();changed++;
+        }catch(err){
+          failed++;console.warn('Toplu adlandırma hatası',item.id,err);
+          // Do not continue after a Firebase conflict or save error: Drive may already have changed.
+          if(/Firebase|bulut|ÇAKIŞMA|Veri yazma|kayıt/i.test(err.message))throw new Error(`Drive'da değişiklik yapılmış olabilir. ${changed} kayıt kaydedildi. Kalanlar için yeniden denemeden önce sayfayı yenileyin. ${err.message}`);
+          if(/401|erişim süresi|429/i.test(err.message))throw err;
+        }
+      }
+      render();toast(`${changed} dosya yeniden adlandırıldı${failed?`, ${failed} dosyada işlem başarısız`:''}.`,failed?'warn':'success');
+    }finally{bulkNaming=false;}
+  }
+  async function openArchive(){
+    if(!drive.connected())throw Error('Önce Google Drive hesabınızı bağlayın.');
+    let id=db.settings.driveRootId;
+    if(!id){const folders=await drive.ensureFolders(db.settings);Object.assign(db.settings,folders);await persist();id=folders.driveRootId;}
+    window.open(`https://drive.google.com/drive/u/0/folders/${encodeURIComponent(id)}`,'_blank','noopener,noreferrer');
+  }
+  async function changeArchiveLocation(){
+    if(!drive.connected())throw Error('Önce Google Drive hesabınızı bağlayın.');
+    const selected=await drive.pickFolder();if(!selected?.id)return;
+    const target=await drive.getMetadata(selected.id);
+    if(target.trashed||target.mimeType!=='application/vnd.google-apps.folder')throw Error('Hedef klasör geçersiz.');
+    if(!window.confirm(`Drive arşiviniz ${target.name} klasörünün altına taşınacak. Bu işlem GarantiTakip klasörünü alt klasörleri ve mevcut yüklenen dosyalarıyla birlikte taşır; Google Picker ile ilişkilendirilen dış dosyalar taşınmaz. Devam edilsin mi?`))return;
+    let root;
+    if(db.settings.driveRootId){root=await drive.moveArchiveRoot(db.settings.driveRootId,target.id);}
+    else{root=await drive.createArchiveIn(target.id,'GarantiTakip');}
+    db.settings.driveRootId=root.id;
+    db.settings.driveRootName=root.name||'GarantiTakip';
+    db.settings.driveParentId=target.id;
+    db.settings.driveParentName=target.name;
+    try{await persist();}catch(err){throw new Error(`Drive klasörünün konumu değiştirildi ancak Firebase ayarı kaydedilemedi. Yeniden taşımayın; önce sayfayı yenileyip Drive'ı kontrol edin. ${err.message}`);}
+    render();toast('GarantiTakip arşiv klasörü yeni konumuna taşındı.');
+  }
+  function archiveRenameModal(){
+    if(!drive.connected())throw Error('Önce Google Drive hesabınızı bağlayın.');
+    if(!db.settings.driveRootId)throw Error('Önce Klasörü aç seçeneğiyle arşivi oluşturun.');
+    showModal('Drive Arşiv Klasörünü Adlandır',`<form id="archiveRenameForm" data-form="archive-rename"><div class="form-grid">${field('archiveName','Klasör adı',db.settings.driveRootName||'GarantiTakip','text','required maxlength="100"','span-2')}</div><p class="fineprint">Yalnızca üst klasörün adı değişir. Faturalar, ürün klasörleri ve belgelerin dosya kimlikleri korunur.</p></form>`,footer('archiveRenameForm','Klasör adını güncelle'));
+  }
   function openDocument(id){const d=db.documents.find(x=>x.id===id);if(!d?.driveFileId){toast('Bu belgenin geçerli bir Drive dosya kimliği yok.','warn');return;}window.open(drive.openUrl({...d,id:d.driveFileId}), '_blank','noopener,noreferrer');}
   function confirmBox(title,text,yesLabel,action,attributes=''){showModal(title,`<div class="demo-warning">${icon('alert')}${escape(text)}</div>`,`${btn('Vazgeç','close-modal')}<button class="btn btn-danger" data-action="${action}" ${attributes}>${escape(yesLabel)}</button>`,'narrow');}
   async function eventAction(el){const a=el.dataset.action;
@@ -287,6 +365,11 @@ import {makeDocumentFilename, filenameParts, renamedDocumentFilename} from './fi
     if(a==='rename-document'){renameDocumentModal(el.dataset.docid);return;}
     if(a==='doc-open'){openDocument(el.dataset.docid);return;}
     if(a==='verify-documents'){await verifyDocuments();return;}
+    if(a==='bulk-names'){bulkNamesPreview();return;}
+    if(a==='bulk-names-confirm'){await bulkNamesApply();return;}
+    if(a==='open-archive'){await openArchive();return;}
+    if(a==='change-archive-folder'){await changeArchiveLocation();return;}
+    if(a==='rename-archive-folder'){archiveRenameModal();return;}
     if(a==='connect-drive'){await drive.connect();toast('Aynı Google Drive hesabı doğrulandı.');render();return;}
     if(a==='sign-out'){await cloud.signOut();return;}
     if(a==='pick-drive'){if(!drive.connected())throw Error('Önce Ayarlar ekranından Drive hesabınızı bağlayın.');const picked=await drive.pick();if(!picked)return;pickedDriveFile=await drive.getMetadata(picked.id);const status=document.getElementById('selectedDriveFile');if(status)status.textContent=`Seçilen dosya: ${pickedDriveFile.name}`;documentNamePreview();return;}
@@ -361,6 +444,15 @@ import {makeDocumentFilename, filenameParts, renamedDocumentFilename} from './fi
       }
       if(f.dataset.form==='event'){
         const c=getCase(data.caseId);if(!c)throw Error('Servis dosyası bulunamadı.');if(!String(data.description||'').trim())throw Error('İşlem açıklaması gerekli.');db.serviceEvents.push({id:uid('evt'),caseId:c.id,type:data.type||'Diğer',date:data.date||today,description:String(data.description||'').trim()});await persist();closeModal();navigate('case',c.id);toast('Servis işlem geçmişine eklendi.');return;
+      }
+      if(f.dataset.form==='archive-rename'){
+        if(!drive.connected()||!db.settings.driveRootId)throw Error('Drive arşiv klasörü bulunamadı.');
+        const name=String(data.archiveName||'').trim();
+        if(!name||name.length>100)throw Error('Klasör adı 1-100 karakter olmalı.');
+        const meta=await drive.renameFile(db.settings.driveRootId,name);
+        db.settings.driveRootName=meta.name;
+        try{await persist();}catch(err){throw new Error(`Drive klasörü yeniden adlandırıldı ancak Firebase kaydedilemedi: ${err.message}`);}
+        closeModal();render();toast('Drive arşiv klasörünün adı değiştirildi.');return;
       }
       if(f.dataset.form==='rename-document'){
         const d=db.documents.find(x=>x.id===f.dataset.docId);

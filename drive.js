@@ -113,6 +113,45 @@ export function createDrive(config, getFirebaseUser) {
       method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newName})
     });
   }
+  async function pickFolder() {
+    if (!credentials.pickerApiKey || !credentials.projectNumber) throw new Error('Google Picker bilgileri eksik.');
+    if (!connected()) throw new Error('Önce Drive hesabını bağlayın.');
+    await ensurePicker();
+    return new Promise((resolve,reject)=>{
+      try {
+        const view=new window.google.picker.DocsView(window.google.picker.ViewId.FOLDERS);
+        view.setIncludeFolders(true);
+        view.setSelectFolderEnabled(true);
+        view.setMode(window.google.picker.DocsViewMode.LIST);
+        const picker=new window.google.picker.PickerBuilder()
+          .addView(view).setOAuthToken(token)
+          .setDeveloperKey(credentials.pickerApiKey)
+          .setAppId(String(credentials.projectNumber))
+          .setCallback(data=>{
+            if(data.action===window.google.picker.Action.CANCEL)resolve(null);
+            if(data.action===window.google.picker.Action.PICKED)resolve(data.docs?.[0]||null);
+          }).build();
+        picker.setVisible(true);
+      }catch(e){reject(e);}
+    });
+  }
+  async function moveArchiveRoot(rootId,targetParentId) {
+    if (!connected())throw new Error('Önce Google Drive hesabını bağlayın.');
+    if(rootId===targetParentId)throw new Error('Arşiv klasörü kendi içine taşınamaz.');
+    const root=await getMetadata(rootId),target=await getMetadata(targetParentId);
+    if(root.trashed||root.mimeType!==FOLDER_MIME)throw new Error('Mevcut arşiv klasörü bulunamadı.');
+    if(target.trashed||target.mimeType!==FOLDER_MIME)throw new Error('Hedef olarak geçerli bir klasör seçin.');
+    if((root.parents||[]).includes(target.id))return root;
+    const query=new URLSearchParams({addParents:target.id,fields:'id,name,parents,webViewLink'});
+    if(root.parents?.length)query.set('removeParents',root.parents.join(','));
+    return fetchJson(`${driveBase}/files/${encodeURIComponent(rootId)}?${query}`,{method:'PATCH'});
+  }
+  async function createArchiveIn(parentId,name='GarantiTakip') {
+    if(!connected())throw new Error('Önce Google Drive hesabını bağlayın.');
+    const parent=await getMetadata(parentId);
+    if(parent.trashed||parent.mimeType!==FOLDER_MIME)throw new Error('Hedef klasör bulunamadı.');
+    return folder(name,parent.id);
+  }
   async function pick() {
     if (!credentials.pickerApiKey || /GOOGLE_PICKER_API_KEY/.test(String(credentials.pickerApiKey)) || !credentials.projectNumber || /GOOGLE_CLOUD_PROJECT_NUMBER/.test(String(credentials.projectNumber))) {
       throw new Error('Google Picker henuz yapilandirilmadi. API Key ve sayisal Project Number degerlerini config.js dosyasina girin.');
@@ -136,5 +175,5 @@ export function createDrive(config, getFirebaseUser) {
     });
   }
   const openUrl=file => file.webViewLink || (file.mimeType?.startsWith('application/vnd.google-apps.')?`https://drive.google.com/open?id=${encodeURIComponent(file.driveFileId||file.id)}`:`https://drive.google.com/file/d/${encodeURIComponent(file.driveFileId||file.id)}/view`);
-  return {connect,connected,ensureFolders,ensureProductFolder,upload,renameFile,pick,getMetadata,openUrl, disconnect(){token=null;expiresAt=0;authorizedEmail='';}};
+  return {connect,connected,ensureFolders,ensureProductFolder,upload,renameFile,pick,pickFolder,moveArchiveRoot,createArchiveIn,getMetadata,openUrl, disconnect(){token=null;expiresAt=0;authorizedEmail='';}};
 }
