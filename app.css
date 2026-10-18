@@ -48,3 +48,21 @@
 .document-link-item>div{display:grid;gap:5px;min-width:0;overflow-wrap:anywhere}.document-link-item small{font-size:12px;color:var(--muted,#677482)}
 .doc-delete-notice{display:flex;gap:10px;align-items:flex-start;border-radius:10px;border:1px solid #e4b9a0;background:rgba(220,123,54,.06);padding:12px;font-size:12px;line-height:1.6}.doc-delete-notice svg{flex:none;width:19px;height:19px}
 @media(max-width:640px){.document-link-item{align-items:flex-start;flex-direction:column}.document-link-item .btn{align-self:flex-start}.modal-footer{flex-wrap:wrap}.doc-delete-intro{padding:12px}}
+
+/* Faz 7 — Reports, PDF invoice analysis and email feed settings */
+.invoice-tool{margin-top:20px;border:1px solid #d3e7e3;background:#f5fbf8;border-radius:12px;padding:18px}
+.invoice-tool h3{font-size:13px;margin-bottom:6px;color:#185e51}
+.invoice-tool p{font-size:11px;line-height:1.65;color:#65817b}
+.invoice-buttons{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px}
+.invoice-buttons input[type=file]{font-size:11px;max-width:100%;min-width:190px;flex:1}
+.invoice-proposal{margin-top:12px;padding:13px;background:#fff;border:1px solid #cce4da;border-radius:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.invoice-proposal div{min-width:0}.invoice-proposal span{display:block;font-size:10px;color:#789289;margin-bottom:3px}
+.invoice-proposal strong{font-size:12px;overflow-wrap:anywhere}
+.invoice-proposal p,.invoice-proposal .btn{grid-column:span 2}
+.report-filters{margin-bottom:15px}.report-kpi{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.report-value{font-size:22px!important;overflow-wrap:anywhere}.report-table{border-collapse:collapse;width:100%;min-width:690px;font-size:11px}
+.report-table th,.report-table td{text-align:left;border-bottom:1px solid #edf1f1;padding:12px 10px;vertical-align:top}
+.report-table th{font-weight:750;background:#f6faf9;color:#536b75}
+.sync-alert{color:#ba5c45!important}
+@media(max-width:730px){.report-kpi{grid-template-columns:repeat(2,minmax(0,1fr))!important}.invoice-proposal{grid-template-columns:1fr}.invoice-proposal p,.invoice-proposal .btn{grid-column:span 1}}
+@media print{body{background:white!important}.sidebar,.topbar,.bottom-nav,.page-head .page-actions,.report-filters,.toast-layer,.modal-backdrop{display:none!important}.workspace,.app-shell{display:block!important;margin:0!important;padding:0!important;width:100%!important}.page{padding:0!important;max-width:none!important}.panel,.stat-card{box-shadow:none!important;break-inside:avoid}.report-kpi{grid-template-columns:repeat(3,minmax(0,1fr))!important}.report-table{min-width:0!important;font-size:9px!important}.report-table th,.report-table td{padding:7px 5px!important}.nowrap-scroll{overflow:visible!important}}

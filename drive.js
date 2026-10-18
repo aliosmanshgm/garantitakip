@@ -105,6 +105,25 @@ export function createDrive(config, getFirebaseUser) {
       method:'POST',headers:{'Content-Type':`multipart/related; boundary=${boundary}`},body:blob
     });
   }
+  async function syncNotificationFeed(savedId,parentId,feed){
+    if(!connected())throw new Error('Hatırlatma eşitlemesi için Google Drive bağlantısını açın.');
+    if(!parentId)throw new Error('GarantiTakip Drive ana klasörü bulunamadı.');
+    const content=JSON.stringify(feed,null,2);
+    if(savedId){
+      try{
+        const meta=await getMetadata(savedId);
+        if(!meta.trashed){
+          return fetchJson(`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(savedId)}?uploadType=media&fields=id,name,mimeType`,{
+            method:'PATCH',headers:{'Content-Type':'application/json; charset=UTF-8'},body:content
+          });
+        }
+      }catch(err){if(!/404/.test(err.message))throw err;}
+    }
+    return fetchJson(`${driveBase}/files?fields=id,name,mimeType`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'GarantiTakip-Hatirlatmalar.json',mimeType:'application/json',parents:[parentId],description:'GarantiTakip scheduled email notifications; contains product names and dates, not documents'})}).then(async meta=>{
+      await fetchJson(`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(meta.id)}?uploadType=media&fields=id,name,mimeType`,{method:'PATCH',headers:{'Content-Type':'application/json; charset=UTF-8'},body:content});
+      return meta;
+    });
+  }
   async function renameFile(id,newName){
     if(!connected())throw new Error('Drive bağlantısı gerekli.');
     if(!/^[a-zA-Z0-9_-]{8,}$/.test(String(id||'')))throw new Error('Drive dosya kimliği geçersiz.');
@@ -182,5 +201,5 @@ export function createDrive(config, getFirebaseUser) {
     });
   }
   const openUrl=file => file.webViewLink || (file.mimeType?.startsWith('application/vnd.google-apps.')?`https://drive.google.com/open?id=${encodeURIComponent(file.driveFileId||file.id)}`:`https://drive.google.com/file/d/${encodeURIComponent(file.driveFileId||file.id)}/view`);
-  return {connect,connected,ensureFolders,ensureProductFolder,upload,renameFile,setTrashed,pick,pickFolder,moveArchiveRoot,createArchiveIn,getMetadata,openUrl, disconnect(){token=null;expiresAt=0;authorizedEmail='';}};
+  return {connect,connected,ensureFolders,ensureProductFolder,upload,syncNotificationFeed,renameFile,setTrashed,pick,pickFolder,moveArchiveRoot,createArchiveIn,getMetadata,openUrl, disconnect(){token=null;expiresAt=0;authorizedEmail='';}};
 }

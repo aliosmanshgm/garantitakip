@@ -2,11 +2,14 @@
 import {validateBackup} from './integrity.js';
 import {makeDocumentFilename, filenameParts, renamedDocumentFilename, historicalUploadName} from './filename.js';
 import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrashAppDocument} from './document-delete.mjs';
+import {extractInvoice} from './invoice.mjs';
+import {makeReport,reportCSV} from './reports.mjs';
+import {createNotificationFeed} from './notification-feed.mjs';
 (() => {
   'use strict';
   const services=window.GTServices;
   const cloud=services.cloud,drive=services.drive;
-  let ready=false, busy=false, committed=null, pickedDriveFile=null, checkingDocuments=false, stagedUpload=null, bulkNaming=false, deletingDocument=false;
+  let ready=false, busy=false, committed=null, pickedDriveFile=null, checkingDocuments=false, stagedUpload=null, bulkNaming=false, deletingDocument=false, invoiceSuggestion=null, notificationSyncing=false, pendingNotificationSync=false, notificationSyncError="";
   const emptyDb=()=>({schemaVersion:2,products:[],purchases:[],warranties:[],serviceCases:[],serviceEvents:[],documents:[],documentLinks:[],reminders:[],settings:{warningDays:[90,30,7]}});
   const clone=x=>JSON.parse(JSON.stringify(x));
   const ICONS = {
@@ -71,6 +74,9 @@ import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrash
     try {
       await cloud.saveDiff(committed,db);
       committed=clone(db);
+      if(db.settings.emailNoticesEnabled && db.settings.notificationFeedFileId && drive?.connected()) {
+        Promise.resolve().then(()=>syncNotificationFeed(false)).catch(err=>{notificationSyncError=err.message;console.warn('Hatırlatma Drive eşitlemesi başarısız',err);});
+      }
       return true;
     } catch(error){
       try {const fresh=await cloud.readOnce();db=fresh;committed=clone(fresh);}
@@ -97,7 +103,7 @@ import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrash
       },err=>{ready=false;gate(`Firebase bağlantı hatası: ${err.message}. Veritabanı kurallarını ve URL bilgisini kontrol edin.`,false);});
     });
   }
-  const ui={route:'dashboard',productId:null,caseId:null,tab:'general',filter:'all',search:'',sort:'updated',docFilter:'all',docSearch:'',serviceFilter:'all'};
+  const ui={route:'dashboard',productId:null,caseId:null,tab:'general',filter:'all',search:'',sort:'updated',docFilter:'all',docSearch:'',serviceFilter:'all',reportFrom:'',reportTo:'',reportProduct:''};
   const getProduct=id=>db.products.find(p=>p.id===id);
   const getPurchase=id=>db.purchases.find(p=>p.id===id);
   const getWarranty=id=>db.warranties.filter(w=>w.productId===id);
@@ -119,9 +125,9 @@ import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrash
     return arr.sort((a,b)=>a.days-b.days);
   };
   const dateRelative=d=>d<0?`${Math.abs(d)} gün gecikti`:d===0?'Bugün':`${d} gün kaldı`;
-  const navItems=[['dashboard','Genel Bakış','layout-dashboard'],['products','Ürünlerim','package'],['services','Servis İşlemleri','wrench'],['documents','Belge Arşivi','files'],['reminders','Hatırlatmalar','bell'],['settings','Ayarlar','settings']];
+  const navItems=[['dashboard','Genel Bakış','layout-dashboard'],['products','Ürünlerim','package'],['services','Servis İşlemleri','wrench'],['documents','Belge Arşivi','files'],['reminders','Hatırlatmalar','bell'],['reports','Raporlar','list-checks'],['settings','Ayarlar','settings']];
   function navigate(route,id){ui.route=route;if(route==='detail'&&id){ui.productId=id;ui.tab='general';}if(route==='case'&&id)ui.caseId=id;window.scrollTo(0,0);render();}
-  const btn=(txt,action,args='',variant='')=>`<button class="btn ${variant}" data-action="${action}" ${args}>${txt}</button>`;
+  const btn=(txt,action,args='',variant='')=>`<button type="button" class="btn ${variant}" data-action="${action}" ${args}>${txt}</button>`;
   const simpleEmpty=(i,h,s,btnHtml='')=>`<div class="empty-state">${icon(i)}<strong>${escape(h)}</strong><p>${escape(s)}</p>${btnHtml}</div>`;
   const titleHeader=(eyebrow,title,desc,actions='')=>`<div class="page-head"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${desc}</p></div>${actions?`<div class="page-actions">${actions}</div>`:''}</div>`;
   function recentActivity(){const events=[...db.products.map(p=>({type:'Ürün',title:p.name,subtitle:'Ürün kaydı güncellendi',date:p.updatedAt||p.createdAt,id:p.id,nav:'detail'})),...db.serviceEvents.map(e=>({type:'Servis',title:productName(getCase(e.caseId)?.productId),subtitle:e.type,date:e.date,id:e.caseId,nav:'case'})),...db.documents.map(d=>({type:'Belge',title:d.name,subtitle:d.kind,date:d.createdAt,id:null,nav:'documents'}))];return events.filter(x=>x.date).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,5);}
@@ -129,10 +135,10 @@ import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrash
   function render(){
     const active=ui.route==='detail'?'products':ui.route==='case'?'services':ui.route;
     document.getElementById('sideNav').innerHTML=navItems.map(n=>`<button data-route="${n[0]}" class="nav-button ${active===n[0]?'active':''}">${icon(n[2])}<span>${n[1]}</span>${n[0]==='reminders'&&actionableReminders().length?`<span class="nav-count">${actionableReminders().length}</span>`:''}</button>`).join('');
-    document.getElementById('bottomNav').innerHTML=[...navItems.slice(0,4),navItems[5]].map(n=>`<button class="mobile-nav-btn ${active===n[0]?'active':''}" data-route="${n[0]}">${icon(n[2])}<span>${n[0]==='dashboard'?'Ana Sayfa':n[0]==='products'?'Ürünler':n[0]==='services'?'Servisler':n[0]==='documents'?'Belgeler':'Ayarlar'}</span></button>`).join('');
+    document.getElementById('bottomNav').innerHTML=[...navItems.slice(0,4),navItems[6]].map(n=>`<button class="mobile-nav-btn ${active===n[0]?'active':''}" data-route="${n[0]}">${icon(n[2])}<span>${n[0]==='dashboard'?'Ana Sayfa':n[0]==='products'?'Ürünler':n[0]==='services'?'Servisler':n[0]==='documents'?'Belgeler':'Ayarlar'}</span></button>`).join('');
     document.getElementById('breadcrumbs').textContent=(ui.route==='detail'?'Ürünlerim / Ürün Detayı':ui.route==='case'?'Servis İşlemleri / İşlem Detayı':navItems.find(n=>n[0]===ui.route)?.[1])||'Genel Bakış';
     document.getElementById('notificationDot').classList.toggle('show',actionableReminders().length>0);
-    const pages={dashboard:dashboardPage,products:productsPage,detail:detailPage,services:servicesPage,case:casePage,documents:documentsPage,reminders:remindersPage,settings:settingsPage};
+    const pages={dashboard:dashboardPage,products:productsPage,detail:detailPage,services:servicesPage,case:casePage,documents:documentsPage,reminders:remindersPage,reports:reportsPage,settings:settingsPage};
     document.getElementById('main').innerHTML=`<div class="page">${(pages[ui.route]||dashboardPage)()}</div>`;
     document.title=`${ui.route==='detail'?productName(ui.productId):ui.route==='case'?'Servis Detayı':document.getElementById('breadcrumbs').textContent} | GarantiTakip`;
     document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
@@ -140,7 +146,7 @@ import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrash
   function dashboardPage(){
     const prods=activeProducts(),upcoming=actionableReminders(),expiring=db.products.filter(p=>p.status!=='Arşivlendi'&&getWarranty(p.id).some(w=>daysTo(w.end)>=0&&daysTo(w.end)<=90)).length,services=db.serviceCases.filter(isActiveCase).length,covered=prods.filter(p=>getWarranty(p.id).some(w=>daysTo(w.end)>=0)).length;
     const stats=[['Toplam Ürün',prods.length,'package','products'],['Aktif Garantili',covered,'shield-check','active'],['90 Gün İçinde Biten',expiring,'clock-3','expiring'],['Açık Servis',services,'wrench','services']];
-    return `${titleHeader('Kişisel yönetim paneli','Genel Bakış','Ürünlerinizi, garantilerinizi ve servis süreçlerinizi tek yerden yönetin.',btn(`${icon('plus')} Yeni Ürün`,'new-product','','btn-primary'))}
+    return `${titleHeader('Kişisel yönetim paneli','Genel Bakış','Ürünlerinizi, garantilerinizi ve servis süreçlerinizi tek yerden yönetin.',btn('Raporlar','goto','data-route-to="reports"','btn-secondary')+btn(`${icon('plus')} Yeni Ürün`,'new-product','','btn-primary'))}
     <div class="intro-layout"><div class="hero"><small>HER ŞEY TEK YERDE</small><h2>Ürünlerin güvende,<br>kayıtların düzenli.</h2><p>Satın alma bilgilerinizi, garanti sürelerinizi ve servis geçmişinizi kaybetmeden takip edin.</p>${btn(`${icon('plus')} Ürün kaydet`,'new-product')}</div>
     <div class="connection-card"><div><div class="connection-top"><span class="connection-icon">${icon(drive?.connected()?'check-circle':'folder-open')}</span>${tag(drive?.connected()?'Drive bağlı':'Drive bağlantısı gerekli',drive?.connected()?'good':'warn')}</div><h3>Özel belge arşivin</h3><p>${drive?.connected()?'Fatura ve servis kanıtları kişisel Google Drive hesabınıza yüklenmeye hazır.':'Belge yüklemek ve mevcut dosyaları seçmek için Ayarlar sayfasından Google Drive bağlantısını etkinleştirin.'}</p></div><div class="connection-bottom"><span class="light-pill">${icon('shield-check')} Firebase korumalı veriler</span><span class="light-pill">${icon('folder-open')} Drive belge arşivi</span></div></div></div>
     <div class="stat-grid">${stats.map(s=>`<button class="stat-card" data-action="stat-filter" data-filter="${s[3]}"><div class="stat-row"><span class="stat-icon">${icon(s[2])}</span><span class="stat-value">${s[1]}</span></div><span class="stat-label">${s[0]}</span></button>`).join('')}</div>
@@ -215,10 +221,53 @@ import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrash
     <div class="info-strip" style="margin-bottom:20px">${icon('info')} Henüz arka plan servisi yoktur. Bu uyarılar yalnızca uygulamayı açtığınızda veya sayfa içindeki işlemler sonrasında hesaplanır.</div>
     <div class="panel"><div class="panel-head"><div><h3 class="panel-title">Yaklaşan tarihler</h3><p class="panel-desc">Garanti için 90 gün, servis ve özel hatırlatmalar için 30 gün penceresi</p></div></div>${alerts.length?alerts.map(a=>`<div class="reminder-card"><span class="reminder-indicator">${icon(a.type==='warranty'?'shield-check':a.type==='service'?'wrench':'bell')}</span><div class="grow"><h3>${escape(a.title)}</h3><p>${escape(a.detail)}</p></div>${tag(dateRelative(a.days),a.days<=7?'bad':'warn')}<button class="icon-button" title="İlgili kayda git" data-action="goto" data-route-to="${a.type==='service'?'case':a.productId?'detail':'reminders'}" data-id="${escape(a.caseId||a.productId||'')}">${icon('chevron-right')}</button>${a.type==='manual'?`<button class="icon-button" title="Tamamla" data-action="complete-reminder" data-rid="${escape(a.id)}">${icon('check-circle')}</button>`:''}</div>`).join(''):simpleEmpty('check-circle','Şimdilik bir uyarı yok','Biten garantiler ve yaklaşan servis takipleri burada görünecek.')}</div>
     <p class="fineprint">Garanti bitişi 90 gün veya daha az olan aktif ürünler gösterilir. Süresi dolmuş garantiler Ürünlerim filtresinde yer alır.</p>`;}
+  function downloadText(filename,text,mime='text/plain;charset=utf-8'){
+    const blob=new Blob([text],{type:mime}),url=URL.createObjectURL(blob),anchor=document.createElement('a');
+    anchor.href=url;anchor.download=filename;document.body.appendChild(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+  }
+  function reportsPage(){
+    const report=makeReport(db,{from:ui.reportFrom,to:ui.reportTo,productId:ui.reportProduct});
+    const summary=report.summary;
+    const number=n=>new Intl.NumberFormat('tr-TR').format(n);
+    const stat=[['Servis Dosyaları',number(summary.cases)],['Açık İşlemler',number(summary.open)],['Ürün Değişimi',number(summary.replacements)],['Parça Değişimi',number(summary.partChanges)],['Toplam Onarım Gideri',money(summary.totalCost)],['Ortalama Servis Süresi',summary.averageDays===null?'Veri yok':summary.averageDays+' gün']];
+    return `${titleHeader('Servis geçmişi ve analiz','Raporlar','İşlemleri ürün ve tarih aralığına göre inceleyin. Raporlar yalnızca Firebase kayıtlarını kullanır.',btn(`${icon('download')} CSV indir`,'report-csv','','btn-primary')+btn('Yazdır / PDF','report-print','','btn-secondary'))}
+    <section class="panel report-filters"><div class="form-grid">${field('reportFrom','Başlangıç tarihi',ui.reportFrom,'date')}${field('reportTo','Bitiş tarihi',ui.reportTo,'date')}<div class="field span-2"><label>Ürün</label><select name="reportProduct"><option value="">Tüm ürünler</option>${db.products.map(p=>`<option value="${escape(p.id)}" ${ui.reportProduct===p.id?'selected':''}>${escape(p.name)}</option>`).join('')}</select></div></div></section>
+    <div class="stat-grid report-kpi">${stat.map(([a,b])=>`<div class="stat-card"><div class="stat-value report-value">${escape(b)}</div><div class="stat-label">${escape(a)}</div></div>`).join('')}</div>
+    <section class="panel"><div class="panel-head"><div><h3 class="panel-title">Servis ve değişim kayıtları</h3><p class="panel-desc">${report.rows.length} kayıt · tarihler başvuru tarihine göre filtrelenir</p></div></div>
+    ${report.rows.length?`<div class="nowrap-scroll"><table class="report-table"><thead><tr><th>Ürün</th><th>Tarih</th><th>Talep</th><th>Durum</th><th>İşlem</th><th>Maliyet</th><th>Süre</th></tr></thead><tbody>${report.rows.map(r=>`<tr><td>${escape(r.product)}</td><td>${escape(dateFormat(r.date))}</td><td>${escape(shortText(r.issue,55))}</td><td>${escape(r.status)}</td><td>${r.replacement?'Ürün değişimi':r.parts?'Parça değişimi':escape(shortText(r.outcome||r.decision,35))}</td><td>${escape(r.cost===''?'—':money(r.cost))}</td><td>${escape(r.days===''?'—':r.days+' gün')}</td></tr>`).join('')}</tbody></table></div>`:simpleEmpty('list-checks','Bu filtrede servis kaydı yok','Tarih veya ürün filtresini değiştirebilirsiniz.')}</section>
+    <p class="fineprint">Ürün değişimi ve parça değişimi sayıları, geçmişe kaydettiğiniz ilgili işlem türlerinden hesaplanır. Ortalama süre yalnızca kapanış tarihi girilmiş sonuçlanmış dosyalardan hesaplanır. Eksik alanlar tahmin edilmez.</p>`;
+  }
+  async function syncNotificationFeed(notify=true){
+    if(notificationSyncing){pendingNotificationSync=true;return;}
+    if(!drive.connected())throw Error('Önce Google Drive hesabınızı Ayarlar menüsünden bağlayın.');
+    notificationSyncing=true;
+    try{
+      const folders=await drive.ensureFolders(db.settings);
+      // Only write the settings to Firebase when the initial file ID needs registering.
+      const feed=createNotificationFeed(db,new Date().toISOString());
+      const oldId=db.settings.notificationFeedFileId||'';
+      const saved=await drive.syncNotificationFeed(oldId,folders.driveRootId,feed);
+      notificationSyncError='';
+      if(saved?.id && saved.id!==oldId){
+        Object.assign(db.settings,folders,{notificationFeedFileId:saved.id,notificationFeedUpdatedAt:new Date().toISOString(),emailNoticesEnabled:true});
+        await persist();
+      }else if(notify){
+        db.settings.notificationFeedUpdatedAt=new Date().toISOString();
+        // Persist the timestamp only after an explicit sync; automated sync does not modify Firebase settings.
+        await persist();
+      }
+      if(notify){render();toast('Hatırlatma listesi Drive ile eşitlendi. E-posta göndermek için Apps Script tetikleyicisini ayrıca kurun.');}
+      return saved?.id;
+    }finally{
+      notificationSyncing=false;
+      if(pendingNotificationSync){pendingNotificationSync=false;Promise.resolve().then(()=>syncNotificationFeed(false)).catch(err=>{notificationSyncError=err.message;});}
+    }
+  }
   function settingsPage(){const user=cloud?.user();const driveOn=!!drive?.connected();return `${titleHeader('Hesap ve sistem','Ayarlar','Google hesabı, Drive bağlantısı ve veri yedekleme')}
     <div class="two-cols"><section class="panel"><div class="panel-head"><h3 class="panel-title">Hesap ve bağlantılar</h3></div><div class="setting-row"><div><h3>Google hesabı</h3><p>${escape(user?.email||'Bağlı değil')} · UID: ${escape(user?.uid||'—')}</p></div>${tag('Doğrulandı','good')}</div><div class="setting-row"><div><h3>Google Drive</h3><p>${driveOn?'Aynı Google hesabı doğrulandı; dosyalara erişebilirsiniz.':'Dosya yüklemek veya seçmek için Drive bağlantısını etkinleştirin.'}</p></div>${driveOn?tag('Bağlı','good'):btn(`${icon('folder-open')} Drive'ı bağla`,'connect-drive','','btn-sm btn-primary')}</div><div class="setting-row"><div><h3>Drive arşiv klasörü</h3><p>${db.settings.driveRootId?`Arşiv: ${escape(db.settings.driveRootName||'GarantiTakip')}${db.settings.driveParentName?` · Üst klasör: ${escape(db.settings.driveParentName)}`:''}`:'İlk dosya yüklemesinde GarantiTakip klasörü oluşturulur.'} · Faturalar ve ürün belgeleri bunun altında tutulur.</p></div><div class="setting-actions">${btn('Klasörü aç','open-archive','','btn-sm')}${btn('Konum değiştir','change-archive-folder','','btn-sm')}${btn('Adını değiştir','rename-archive-folder','','btn-sm')}</div></div><div class="setting-row"><div><h3>Firebase Realtime Database</h3><p>Gerçek kayıtlar kullanıcı UID altında saklanır.</p></div>${tag('Bulutta','good')}</div><div class="setting-row"><div><h3>Oturum</h3><p>Google oturumundan çıkış yapabilirsiniz.</p></div>${btn('Çıkış yap','sign-out','','btn-sm')}</div></section>
     <section class="panel"><div class="panel-head"><h3 class="panel-title">Veri yönetimi</h3></div><div class="setting-row"><div><h3>JSON yedeğini indir</h3><p>Ürün, garanti, servis ve Drive dosya referanslarını içerir; PDF içermez.</p></div>${btn(`${icon('download')} Dışa aktar`,'export-json','','btn-sm')}</div><div class="setting-row"><div><h3>JSON yedeğini içe aktar</h3><p>İsteğe bağlı geri yükleme; mevcut bulut kayıtlarının üzerine yazar.</p></div>${btn(`${icon('upload')} İçe aktar`,'import-json','','btn-sm')}</div><div class="info-strip">${icon('info')} JSON dosyası seri numaraları ve fatura bilgileri içerir; güvenli yerde saklayın. Drive belgeleri ayrıca yedeklenmelidir.</div></section></div>
-    <section class="panel" style="margin-top:18px"><div class="panel-head"><h3 class="panel-title">Sürüm ve kapsam</h3>${tag('Faz 6','blue')}</div><div class="kv-grid">${[['Arayüz','HTML + CSS + JavaScript'],['Kimlik doğrulama','Firebase Google Auth'],['Veritabanı','Firebase Realtime Database'],['Dosyalar','Google Drive API + Google Picker'],['Dosya yetkisi','drive.file (kısıtlı erişim)'],['Yedekleme','JSON dışa aktarma / geri yükleme'],['Sürüm','Faz 6 Kanıt Kaldırma']].map(([a,b])=>`<div class="kv"><label>${a}</label><p>${escape(b)}</p></div>`).join('')}</div></section>`;}
+    <section class="panel" style="margin-top:18px"><div class="panel-head"><h3 class="panel-title">Otomatik e-posta hatırlatmaları</h3>${tag(db.settings.notificationFeedFileId?'Drive listesi hazır':'Kurulum gerekli',db.settings.notificationFeedFileId?'good':'warn')}</div><p class="panel-desc">Ürün isimleri, garanti bitişleri ve servis takip tarihleri Google Drive'ınızdaki özel JSON dosyasına aktarılır. Uygulama açıkken ve Drive bağlıyken değişiklikler eşitlenir. E-posta gönderimi için Google Apps Script'te ayrıca günlük zamanlayıcı kurulur.</p><div class="setting-row"><div><h3>Hatırlatma listesi</h3><p>Drive dosya kimliği: <code>${escape(db.settings.notificationFeedFileId||'Henüz oluşturulmadı')}</code></p><p>${db.settings.notificationFeedUpdatedAt?'Son eşitleme: '+escape(db.settings.notificationFeedUpdatedAt):'Eşitleme yapılmadı.'}</p>${notificationSyncError?`<p class="sync-alert">Son eşitleme hatası: ${escape(notificationSyncError)}</p>`:''}</div>${btn('Drive ile eşitle','sync-reminder-feed','','btn-sm btn-primary')}</div><p class="fineprint">E-posta içeriği fatura, fiyat ve seri numarası içermez. Drive erişimi kapalıyken veya eşitleme başarısızsa listede güncel olmayan bilgiler bulunabilir. Bu işlem tek başına e-posta göndermez.</p></section>
+    <section class="panel" style="margin-top:18px"><div class="panel-head"><h3 class="panel-title">Sürüm ve kapsam</h3>${tag('Faz 7','blue')}</div><div class="kv-grid">${[['Arayüz','HTML + CSS + JavaScript'],['Kimlik doğrulama','Firebase Google Auth'],['Veritabanı','Firebase Realtime Database'],['Dosyalar','Google Drive API + Google Picker'],['Dosya yetkisi','drive.file (kısıtlı erişim)'],['Yedekleme','JSON dışa aktarma / geri yükleme'],['Sürüm','Faz 7 Fatura + Rapor + E-posta']].map(([a,b])=>`<div class="kv"><label>${a}</label><p>${escape(b)}</p></div>`).join('')}</div></section>`;}
   const field=(name,label,value='',type='text',attrs='',span='')=>`<div class="field ${span}"><label for="f_${name}">${label}</label><input id="f_${name}" name="${name}" type="${type}" ${attrs} value="${escape(value)}"></div>`;
   const selectField=(name,label,list,current='',blank='Seçiniz',span='')=>`<div class="field ${span}"><label for="f_${name}">${label}</label><select id="f_${name}" name="${name}">${choices(list,current,blank)}</select></div>`;
   const textareaField=(name,label,value='',span='span-2')=>`<div class="field ${span}"><label for="f_${name}">${label}</label><textarea id="f_${name}" name="${name}" rows="3">${escape(value)}</textarea></div>`;
@@ -227,7 +276,7 @@ import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrash
   const footer=(form,label='Kaydet')=>`${btn('Vazgeç','close-modal') }<button class="btn btn-primary" type="submit" form="${form}">${icon('check-circle')} ${label}</button>`;
   function productModal(id){const p=id?getProduct(id):null,pu=p?getPurchase(p.purchaseId):null,already=p?.purchaseId||'';
     const body=`<form id="productForm" data-form="product" data-edit-id="${escape(id||'')}"><div class="form-section">01 · Ürün bilgileri</div><div class="form-grid">${field('name','Ürün adı <span class="required">*</span>',p?.name||'','text','required maxlength="140"')}${selectField('category','Kategori <span class="required">*</span>',OPTIONS.categories,p?.category||'','Seçiniz')}${field('brand','Marka',p?.brand||'')}${field('model','Model',p?.model||'')}${field('serial','Seri No / IMEI',p?.serial||'')}${selectField('status','Kullanım durumu',OPTIONS.productStatus,p?.status||'Kullanımda',null)}${textareaField('notes','Notlar',p?.notes||'')}</div>
-    <hr class="form-divider"><div class="form-section">02 · Satın alma ve fatura</div><div class="form-grid">${selectField('existingPurchase','Mevcut fatura / alış kaydı',db.purchases.map(x=>`${x.id} | ${x.invoiceNo||x.vendor||'Faturasız'}`),already?`${already} | ${pu?.invoiceNo||pu?.vendor||'Faturasız'}`:'','Yeni satın alma kaydı oluştur / boş bırak','span-2')}${field('vendor','Satıcı',pu?.vendor||'')}${field('platform','Mağaza / Platform',pu?.platform||'')}${field('date','Satın alma tarihi',pu?.date||'','date')}${field('deliveryDate','Teslim tarihi',pu?.deliveryDate||'','date')}${field('price','Satın alma fiyatı',pu?.price??'','number','min="0" step="0.01"')}${selectField('currency','Para birimi',['TRY','USD','EUR','GBP'],pu?.currency||'TRY',null)}${field('invoiceNo','Fatura numarası',pu?.invoiceNo||'')}${field('orderNo','Sipariş numarası',pu?.orderNo||'')}</div><div class="fineprint">Aynı faturayı birden fazla ürüne bağlamak için mevcut alış kaydını seçin. Bu durumda yeni satın alma alanları dikkate alınmaz.</div></form>`;
+    <hr class="form-divider"><div class="form-section">02 · Satın alma ve fatura</div><div class="form-grid">${selectField('existingPurchase','Mevcut fatura / alış kaydı',db.purchases.map(x=>`${x.id} | ${x.invoiceNo||x.vendor||'Faturasız'}`),already?`${already} | ${pu?.invoiceNo||pu?.vendor||'Faturasız'}`:'','Yeni satın alma kaydı oluştur / boş bırak','span-2')}${field('vendor','Satıcı',pu?.vendor||'')}${field('platform','Mağaza / Platform',pu?.platform||'')}${field('date','Satın alma tarihi',pu?.date||'','date')}${field('deliveryDate','Teslim tarihi',pu?.deliveryDate||'','date')}${field('price','Satın alma fiyatı',pu?.price??'','number','min="0" step="0.01"')}${selectField('currency','Para birimi',['TRY','USD','EUR','GBP'],pu?.currency||'TRY',null)}${field('invoiceNo','Fatura numarası',pu?.invoiceNo||'')}${field('orderNo','Sipariş numarası',pu?.orderNo||'')}</div><div class="fineprint">Aynı faturayı birden fazla ürüne bağlamak için mevcut alış kaydını seçin. Bu durumda yeni satın alma alanları dikkate alınmaz.</div><div class="invoice-tool"><h3>Faturadan bilgileri öner</h3><p>PDF/JPG/PNG yükleyerek satıcı, fatura tarihi, numarası ve tutarı çıkarabilirsiniz. İşlem tarayıcınızda yapılır; bilgiler onayınız olmadan kaydedilmez. Çok ürünlü faturada genel tutar ürün fiyatı olmayabilir.</p><div class="invoice-buttons"><input type="file" name="invoicePdf" accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp" aria-label="Okunacak faturayı seç"><button type="button" class="btn btn-secondary" data-action="analyze-invoice">${icon('file-text')} Faturayı oku</button></div><div id="invoicePreview" role="status"></div></div></form>`;
     showModal(p?'Ürün Bilgilerini Düzenle':'Yeni Ürün Kaydı',body,footer('productForm',p?'Değişiklikleri kaydet':'Ürünü kaydet'),'wide','Eksik bilgiler sonradan tamamlanabilir.');
   }
   function warrantyModal(pid,wid){
@@ -399,6 +448,31 @@ import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrash
     if(a==='close-modal'){closeModal();return;}
     if(a==='modal-backdrop'){closeModal();return;}
     if(a==='goto'){navigate(el.dataset.routeTo,el.dataset.id);return;}
+    if(a==='analyze-invoice'){
+      const f=document.getElementById('productForm');if(!f)throw Error('Ürün formu açık değil.');
+      const file=f.querySelector('[name=invoicePdf]')?.files?.[0];if(!file)throw Error('Önce bir fatura PDF veya fotoğrafı seçin.');
+      const out=document.getElementById('invoicePreview');out.textContent='Fatura okunuyor; taranmış belgeler için OCR daha uzun sürebilir…';
+      try{
+        invoiceSuggestion=await extractInvoice(file,{ocr:true});
+        const fields=[['Satıcı',invoiceSuggestion.vendor||'Belirlenemedi'],['Fatura numarası',invoiceSuggestion.invoiceNo||'Belirlenemedi'],['Fatura tarihi',invoiceSuggestion.date||'Belirlenemedi'],['Genel tutar',invoiceSuggestion.price===null?'Belirlenemedi':money(invoiceSuggestion.price,invoiceSuggestion.currency)]];
+        out.innerHTML=`<div class="invoice-proposal">${fields.map(([label,value])=>`<div><span>${escape(label)}</span><strong>${escape(value)}</strong></div>`).join('')}<p>Okuma yöntemi: ${invoiceSuggestion.method==='ocr'?'OCR (fotoğraf veya tarama)':'PDF metni'}. Lütfen alanları faturayla karşılaştırın; otomatik okuma hata yapabilir.</p>${btn('Önerileri forma uygula','invoice-apply','','btn-sm btn-primary')}</div>`;
+      }catch(err){invoiceSuggestion=null;out.textContent=err.message;}
+      return;
+    }
+    if(a==='invoice-apply'){
+      const f=document.getElementById('productForm');if(!f||!invoiceSuggestion)throw Error('Fatura önerisi bulunamadı.');
+      if(f.elements.existingPurchase?.value)throw Error('Mevcut fatura seçili. Yeni bilgiler uygulamak için önce “Yeni satın alma kaydı” seçin.');
+      if(!window.confirm('Okunan fatura bilgileri formdaki ilgili alanlara aktarılacak. Tutar, birden fazla ürünün toplamı olabilir. Devam edilsin mi?'))return;
+      const vals={vendor:invoiceSuggestion.vendor,invoiceNo:invoiceSuggestion.invoiceNo,date:invoiceSuggestion.date,price:invoiceSuggestion.price??'',currency:invoiceSuggestion.currency};
+      for(const [name,value] of Object.entries(vals))if(value!==''&&value!==null&&f.elements[name])f.elements[name].value=value;
+      toast('Öneriler forma aktarıldı. Kaydetmeden önce kontrol edin.');return;
+    }
+    if(a==='report-csv'){
+      const report=makeReport(db,{from:ui.reportFrom,to:ui.reportTo,productId:ui.reportProduct});
+      downloadText(`GarantiTakip_Servis_Raporu_${iso(new Date())}.csv`,reportCSV(report.rows),'text/csv;charset=utf-8');return;
+    }
+    if(a==='report-print'){window.print();return;}
+    if(a==='sync-reminder-feed'){await syncNotificationFeed(true);return;}
     if(a==='new-product'){productModal();return;}if(a==='edit-product'){productModal(el.dataset.pid);return;}
     if(a==='new-warranty'){warrantyModal(el.dataset.pid);return;}
     if(a==='edit-warranty'){const w=db.warranties.find(x=>x.id===el.dataset.wid);if(!w)throw new Error('Garanti kaydı bulunamadı.');warrantyModal(w.productId,w.id);return;}
@@ -438,7 +512,7 @@ import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrash
     if(a==='open-archive'){await openArchive();return;}
     if(a==='change-archive-folder'){await changeArchiveLocation();return;}
     if(a==='rename-archive-folder'){archiveRenameModal();return;}
-    if(a==='connect-drive'){await drive.connect();toast('Aynı Google Drive hesabı doğrulandı.');render();return;}
+    if(a==='connect-drive'){await drive.connect();toast('Aynı Google Drive hesabı doğrulandı.');render();if(db.settings.emailNoticesEnabled&&db.settings.notificationFeedFileId)syncNotificationFeed(false).catch(err=>{notificationSyncError=err.message;console.warn(err);});return;}
     if(a==='sign-out'){await cloud.signOut();return;}
     if(a==='pick-drive'){if(!drive.connected())throw Error('Önce Ayarlar ekranından Drive hesabınızı bağlayın.');const picked=await drive.pick();if(!picked)return;pickedDriveFile=await drive.getMetadata(picked.id);const status=document.getElementById('selectedDriveFile');if(status)status.textContent=`Seçilen dosya: ${pickedDriveFile.name}`;documentNamePreview();return;}
     if(a==='doc-mode'){const drive=el.dataset.mode==='drive';const form=document.getElementById('documentForm');form.dataset.docMode=drive?'drive':'device';document.getElementById('devicePicker').style.display=drive?'none':'block';document.getElementById('drivePicker').style.display=drive?'block':'none';document.querySelectorAll('.radio-tab').forEach(t=>t.classList.toggle('active',t.dataset.mode===el.dataset.mode));documentNamePreview();return;}
@@ -469,6 +543,7 @@ import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrash
     }
   });
   document.addEventListener('change',e=>{
+    if(['reportFrom','reportTo','reportProduct'].includes(e.target.name)){ui[e.target.name]=e.target.value;render();}
     if(e.target.id==='productSort'){ui.sort=e.target.value;render();}
     if(e.target.id==='docFilter'){ui.docFilter=e.target.value;render();}
     if(e.target.name==='productId'&&e.target.closest('#documentForm')){
