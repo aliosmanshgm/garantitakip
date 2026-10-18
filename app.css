@@ -14,3 +14,20 @@
 .auth-card small{color:#83929c;line-height:1.5}
 .auth-card button{min-height:44px;width:100%;justify-content:center}
 .auth-mark{display:grid;place-items:center;background:#0b8575;color:#fff;width:57px;height:57px;font-size:29px;border-radius:17px;font-weight:800}
+
+/* Faz 4: warranty actions and descriptive Drive filename preview */
+.warranty-actions{display:flex;gap:7px;align-items:center;justify-content:flex-end;flex-wrap:wrap;flex:none}
+.warranty-actions .btn{min-width:0}
+.filename-preview{background:#f5faf8;border:1px solid #d8ebe4;border-radius:10px;padding:13px 14px;margin-top:14px;display:flex;flex-direction:column;gap:7px;max-width:100%}
+.filename-preview span{font-size:11px;color:#6e8c84;font-weight:700;display:flex;align-items:center;gap:7px}
+.filename-preview svg{width:15px;height:15px}
+.filename-preview strong{font-size:12px;color:#1c554a;overflow-wrap:anywhere;line-height:1.55}
+@media(max-width:730px){.warranty-actions{width:100%;justify-content:flex-start}.warranty-actions .tag{margin-right:auto}.warranty-actions .btn{flex:0 1 auto}}
+
+.list-card.warranty-card{flex-wrap:wrap}
+.list-card.warranty-card .grow{min-width:150px}
+@media(max-width:730px){
+  .list-card.warranty-card .grow{flex:1 1 calc(100% - 55px)}
+  .list-card.warranty-card .warranty-actions{flex:1 1 100%;width:100%;margin-left:49px;justify-content:flex-start}
+  .list-card.warranty-card .warranty-actions .tag{margin-right:auto}
+}

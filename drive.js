@@ -92,17 +92,25 @@ export function createDrive(config, getFirebaseUser) {
     const existing=await safeFolder(current,`PRD-${productId.replace(/[^\w-]/g,'_').slice(-24)} - ${String(productName||'Urun').slice(0,80)}`,settings.driveProductsId);
     return existing;
   }
-  async function upload(file,parentId, maxMB=25) {
+  async function upload(file,parentId, maxMB=25, friendlyName='') {
     if(!file?.size)throw new Error('Boş dosya yüklenemez.');
     if(file.size>maxMB*1024*1024)throw new Error(`Dosya ${maxMB} MB sınırını aşıyor.`);
     const boundary=`gt${crypto.randomUUID().replace(/-/g,'')}`;
-    const meta={name:escapeName(file),mimeType:file.type||'application/octet-stream',parents:[parentId]};
+    const meta={name:friendlyName||escapeName(file),mimeType:file.type||'application/octet-stream',parents:[parentId]};
     const blob=new Blob([
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n--${boundary}\r\nContent-Type: ${file.type||'application/octet-stream'}\r\n\r\n`,
       file,`\r\n--${boundary}--`
     ],{type:`multipart/related; boundary=${boundary}`});
     return fetchJson(`https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,size,webViewLink`,{
       method:'POST',headers:{'Content-Type':`multipart/related; boundary=${boundary}`},body:blob
+    });
+  }
+  async function renameFile(id,newName){
+    if(!connected())throw new Error('Drive bağlantısı gerekli.');
+    if(!/^[a-zA-Z0-9_-]{8,}$/.test(String(id||'')))throw new Error('Drive dosya kimliği geçersiz.');
+    if(!newName || newName.length>210 || /[\/\x00-]/.test(newName))throw new Error('Yeni dosya adı uygun değil.');
+    return fetchJson(`${driveBase}/files/${encodeURIComponent(id)}?fields=id,name,mimeType,webViewLink`,{
+      method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newName})
     });
   }
   async function pick() {
@@ -128,5 +136,5 @@ export function createDrive(config, getFirebaseUser) {
     });
   }
   const openUrl=file => file.webViewLink || (file.mimeType?.startsWith('application/vnd.google-apps.')?`https://drive.google.com/open?id=${encodeURIComponent(file.driveFileId||file.id)}`:`https://drive.google.com/file/d/${encodeURIComponent(file.driveFileId||file.id)}/view`);
-  return {connect,connected,ensureFolders,ensureProductFolder,upload,pick,getMetadata,openUrl, disconnect(){token=null;expiresAt=0;authorizedEmail='';}};
+  return {connect,connected,ensureFolders,ensureProductFolder,upload,renameFile,pick,getMetadata,openUrl, disconnect(){token=null;expiresAt=0;authorizedEmail='';}};
 }
