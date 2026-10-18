@@ -38,3 +38,13 @@
 .bulk-row small{color:var(--muted,#6b7b87);font-size:12px}
 .bulk-row strong{font-size:13px;line-height:1.45}
 @media(max-width:640px){.setting-actions{max-width:170px}.bulk-preview{max-height:48vh}}
+
+/* Faz 6 - Remove proof references safely */
+.doc-remove-icon{color:#ad4040}.doc-remove-icon:hover{background:rgba(184,48,48,.10)}
+.doc-delete-intro{border:1px solid var(--line,#e2e7ea);border-radius:12px;background:var(--panel,#f7f9fa);padding:15px;overflow-wrap:anywhere}
+.doc-delete-intro p{margin:6px 0 0;font-size:13px;line-height:1.5;color:var(--muted,#677482)}
+.doc-delete-links{margin:16px 0}.doc-delete-links h3{font-size:14px;margin:0 0 10px}
+.document-link-item{display:flex;justify-content:space-between;gap:15px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line,#e1e7ec)}
+.document-link-item>div{display:grid;gap:5px;min-width:0;overflow-wrap:anywhere}.document-link-item small{font-size:12px;color:var(--muted,#677482)}
+.doc-delete-notice{display:flex;gap:10px;align-items:flex-start;border-radius:10px;border:1px solid #e4b9a0;background:rgba(220,123,54,.06);padding:12px;font-size:12px;line-height:1.6}.doc-delete-notice svg{flex:none;width:19px;height:19px}
+@media(max-width:640px){.document-link-item{align-items:flex-start;flex-direction:column}.document-link-item .btn{align-self:flex-start}.modal-footer{flex-wrap:wrap}.doc-delete-intro{padding:12px}}

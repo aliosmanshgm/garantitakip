@@ -74,7 +74,7 @@ export function createDrive(config, getFirebaseUser) {
   }
   async function getMetadata(id){
     if(!/^[a-zA-Z0-9_-]{8,}$/.test(id))throw new Error('Drive dosya kimliği geçersiz.');
-    return fetchJson(`${driveBase}/files/${encodeURIComponent(id)}?fields=id,name,mimeType,size,webViewLink,trashed,parents`);
+    return fetchJson(`${driveBase}/files/${encodeURIComponent(id)}?fields=id,name,mimeType,size,webViewLink,trashed,parents,capabilities(canTrash)`);
   }
   async function safeFolder(savedId,name,parent) {
     if(savedId){try{const f=await getMetadata(savedId);if(f.mimeType===FOLDER_MIME&&!f.trashed)return f.id;}catch(e){if(!/404/.test(e.message))throw e;}}
@@ -111,6 +111,13 @@ export function createDrive(config, getFirebaseUser) {
     if(!newName || newName.length>210 || /[\/\x00-]/.test(newName))throw new Error('Yeni dosya adı uygun değil.');
     return fetchJson(`${driveBase}/files/${encodeURIComponent(id)}?fields=id,name,mimeType,webViewLink`,{
       method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:newName})
+    });
+  }
+  async function setTrashed(id,trashed){
+    if(!connected())throw new Error('Drive bağlantısı gerekli.');
+    if(!/^[a-zA-Z0-9_-]{8,}$/.test(String(id||'')))throw new Error('Drive dosya kimliği geçersiz.');
+    return fetchJson(`${driveBase}/files/${encodeURIComponent(id)}?fields=id,name,trashed`,{
+      method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({trashed:!!trashed})
     });
   }
   async function pickFolder() {
@@ -175,5 +182,5 @@ export function createDrive(config, getFirebaseUser) {
     });
   }
   const openUrl=file => file.webViewLink || (file.mimeType?.startsWith('application/vnd.google-apps.')?`https://drive.google.com/open?id=${encodeURIComponent(file.driveFileId||file.id)}`:`https://drive.google.com/file/d/${encodeURIComponent(file.driveFileId||file.id)}/view`);
-  return {connect,connected,ensureFolders,ensureProductFolder,upload,renameFile,pick,pickFolder,moveArchiveRoot,createArchiveIn,getMetadata,openUrl, disconnect(){token=null;expiresAt=0;authorizedEmail='';}};
+  return {connect,connected,ensureFolders,ensureProductFolder,upload,renameFile,setTrashed,pick,pickFolder,moveArchiveRoot,createArchiveIn,getMetadata,openUrl, disconnect(){token=null;expiresAt=0;authorizedEmail='';}};
 }
