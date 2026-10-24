@@ -40,6 +40,51 @@
   <div id="authGate" class="auth-overlay"><div class="auth-card"><h1>GarantiTakip</h1><p>Bağlantı hazırlanıyor…</p></div></div>
   <div id="modalLayer"></div>
   <div id="toastLayer" class="toast-layer" aria-live="polite"></div>
+  <script>
+    /* Acilis hatasi - statik betik; ES modulleri yuklenemese de calisir. */
+    window.__GT_BOOT_DONE__ = false;
+    function gtDisplayEarlyError(message) {
+      const gate = document.getElementById('authGate');
+      if (!gate || gate.hidden || !gate.textContent.includes('Bağlantı hazırlanıyor')) return;
+      const box = document.createElement('div');
+      box.className = 'auth-card';
+      const heading = document.createElement('h1');
+      heading.textContent = 'GarantiTakip';
+      const body = document.createElement('p');
+      body.textContent = 'Uygulama açılışında hata oluştu. Firebase kayıtlarınız bu nedenle silinmiş değildir.';
+      const detail = document.createElement('small');
+      detail.style.cssText = 'display:block;overflow-wrap:anywhere;color:#b45309';
+      detail.textContent = String(message).slice(0,500);
+      box.append(heading,body,detail);
+      gate.replaceChildren(box);
+    }
+    window.addEventListener('error', event => {
+      if (event.target && event.target !== window) {
+        const src = event.target.src || event.target.href;
+        if (src) gtDisplayEarlyError('Kaynak yüklenemedi: ' + src);
+      } else if (event.message) {
+        gtDisplayEarlyError(event.message);
+      }
+    }, true);
+    window.addEventListener('unhandledrejection', event => {
+      gtDisplayEarlyError(event.reason?.message || 'JavaScript modülü çalıştırılamadı.');
+    });
+    setTimeout(async () => {
+      const gate = document.getElementById('authGate');
+      if (window.__GT_BOOT_DONE__ || !gate || gate.hidden || !gate.textContent.includes('Bağlantı hazırlanıyor')) return;
+      const names = ['bootstrap.js','app.js','cloud.js','drive.js','integrity.js','filename.js','document-delete.mjs','invoice.mjs','reports.mjs','notification-feed.mjs'];
+      const problems = [];
+      await Promise.all(names.map(async file => {
+        try {
+          const response = await fetch(file, { method:'HEAD', cache:'no-store' });
+          if (!response.ok) problems.push(file + ': HTTP ' + response.status);
+        } catch { problems.push(file + ': erişilemiyor'); }
+      }));
+      gtDisplayEarlyError(problems.length
+        ? 'Eksik/erişilemeyen dosyalar: ' + problems.join(', ')
+        : 'Dosyalar erişilebilir, ancak JavaScript başlatılamadı. Tarayıcı geliştirici araçları > Console bölümündeki ilk kırmızı hatayı kontrol edin.');
+    }, 12000);
+  </script>
   <script src="config.js"></script>
   <script type="module" src="bootstrap.js"></script>
 </body>
