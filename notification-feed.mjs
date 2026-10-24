@@ -8,7 +8,7 @@ export function createNotificationFeed(db,nowISO){
   }
   for(const c of db.serviceCases||[]){
     const p=ps.get(c.productId);
-    if(p&&!['Kapatıldı','Sonuçlandı'].includes(c.status)&&/^\d{4}-\d{2}-\d{2}$/.test(c.nextActionDate||''))items.push({id:c.id,type:'service',name:p.name,detail:c.issue||'Servis takibi',date:c.nextActionDate});
+    if(p&&!['Kapatıldı','Sonuçlandı'].includes(c.status)&&/^\d{4}-\d{2}-\d{2}$/.test(c.nextActionDate||''))items.push({id:c.id,type:'service',name:p.name,detail:[c.caseType||'Garanti / Servis',c.issue||'Başvuru takibi'].join(' · '),date:c.nextActionDate});
   }
   for(const r of db.reminders||[]){
     if(!r.completed&&/^\d{4}-\d{2}-\d{2}$/.test(r.date||''))items.push({id:r.id,type:'manual',name:r.title||'Hatırlatma',detail:'Kişisel hatırlatma',date:r.date});

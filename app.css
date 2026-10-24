@@ -66,3 +66,7 @@
 .sync-alert{color:#ba5c45!important}
 @media(max-width:730px){.report-kpi{grid-template-columns:repeat(2,minmax(0,1fr))!important}.invoice-proposal{grid-template-columns:1fr}.invoice-proposal p,.invoice-proposal .btn{grid-column:span 1}}
 @media print{body{background:white!important}.sidebar,.topbar,.bottom-nav,.page-head .page-actions,.report-filters,.toast-layer,.modal-backdrop{display:none!important}.workspace,.app-shell{display:block!important;margin:0!important;padding:0!important;width:100%!important}.page{padding:0!important;max-width:none!important}.panel,.stat-card{box-shadow:none!important;break-inside:avoid}.report-kpi{grid-template-columns:repeat(3,minmax(0,1fr))!important}.report-table{min-width:0!important;font-size:9px!important}.report-table th,.report-table td{padding:7px 5px!important}.nowrap-scroll{overflow:visible!important}}
+
+/* Faz 8 - apparel categories and consumer claims */
+.fashion-fields[hidden]{display:none!important}
+.case-type-label{margin-top:6px!important;color:var(--teal)!important;font-weight:650;font-size:11px!important}
