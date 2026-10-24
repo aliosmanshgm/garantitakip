@@ -1,10 +1,10 @@
 /* GarantiTakip - Faz 3. Firebase + Drive, checked restores and record integrity. */
-import {validateBackup} from './integrity.js';
-import {makeDocumentFilename, filenameParts, renamedDocumentFilename, historicalUploadName} from './filename.js';
-import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrashAppDocument} from './document-delete.mjs';
-import {extractInvoice} from './invoice.mjs';
-import {makeReport,reportCSV} from './reports.mjs';
-import {createNotificationFeed} from './notification-feed.mjs';
+import {validateBackup} from './integrity.js?v=8_3';
+import {makeDocumentFilename, filenameParts, renamedDocumentFilename, historicalUploadName} from './filename.js?v=8_3';
+import {documentLinksFor, removeDocumentLink, removeDocumentCompletely, canTrashAppDocument} from './document-delete.mjs?v=8_3';
+import {extractInvoice} from './invoice.mjs?v=8_3';
+import {makeReport,reportCSV} from './reports.mjs?v=8_3';
+import {createNotificationFeed} from './notification-feed.mjs?v=8_3';
 (() => {
   'use strict';
   const services=window.GTServices;

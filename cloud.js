@@ -3,7 +3,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import { getDatabase, ref, onValue, get, runTransaction } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js';
-import {emptyDb,deserialize,serialize,mergeAgainstRemote,validateBackup,same} from './integrity.js';
+import {emptyDb,deserialize,serialize,mergeAgainstRemote,validateBackup,same} from './integrity.js?v=8_3';
 
 export function createCloud(config) {
   const app = initializeApp(config.firebase);

@@ -36,8 +36,8 @@ function startupFailure(error) {
 try {
   let cloud = null, drive = null;
   const [{ createCloud }, { createDrive }] = await Promise.all([
-    import('./cloud.js?v=8_1'),
-    import('./drive.js?v=8_1')
+    import('./cloud.js?v=8_3'),
+    import('./drive.js?v=8_3')
   ]);
   if (configReady) {
     cloud = createCloud(config);
@@ -48,7 +48,7 @@ try {
     cloud, drive, config,
     bootError: null
   };
-  await import('./app.js?v=8_1');
+  await import('./app.js?v=8_3');
   window.__GT_BOOT_DONE__ = true;
 } catch (error) {
   startupFailure(error);

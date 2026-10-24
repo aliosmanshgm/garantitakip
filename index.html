@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f6f8fa">
   <meta name="description" content="GarantiTakip: kişisel ürün, garanti ve servis yönetim paneli (Google Drive ve Firebase ile)">
   <title>GarantiTakip | Ürün ve Garanti Yönetimi</title>
-  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="app.css?v=8_3">
 </head>
 <body>
   <div class="app-shell">
@@ -41,51 +41,76 @@
   <div id="modalLayer"></div>
   <div id="toastLayer" class="toast-layer" aria-live="polite"></div>
   <script>
-    /* Acilis hatasi - statik betik; ES modulleri yuklenemese de calisir. */
+    // Faz 8.3 - acilis teshis. Firebase ve Drive verileri etkilenmez.
     window.__GT_BOOT_DONE__ = false;
-    function gtDisplayEarlyError(message) {
+    const gtVersion = '8.3';
+    const gtFailLog = [];
+    function gtCleanSource(url) {
+      try {
+        const u = new URL(url, location.href);
+        return u.origin === location.origin ? u.pathname.split('/').pop() : u.hostname + u.pathname;
+      } catch { return String(url || 'bilinmiyor'); }
+    }
+    function gtExplainProblem(message) {
       const gate = document.getElementById('authGate');
-      if (!gate || gate.hidden || !gate.textContent.includes('Bağlantı hazırlanıyor')) return;
-      const box = document.createElement('div');
-      box.className = 'auth-card';
+      if (!gate || gate.hidden || window.__GT_BOOT_DONE__) return;
+      const errorText = String(message || 'Bilinmeyen JavaScript hatasi').slice(0,900);
+      if (gtFailLog.includes(errorText)) return;
+      gtFailLog.push(errorText);
+      const card = document.createElement('div');
+      card.className = 'auth-card';
       const heading = document.createElement('h1');
       heading.textContent = 'GarantiTakip';
-      const body = document.createElement('p');
-      body.textContent = 'Uygulama açılışında hata oluştu. Firebase kayıtlarınız bu nedenle silinmiş değildir.';
-      const detail = document.createElement('small');
-      detail.style.cssText = 'display:block;overflow-wrap:anywhere;color:#b45309';
-      detail.textContent = String(message).slice(0,500);
-      box.append(heading,body,detail);
-      gate.replaceChildren(box);
+      const lead = document.createElement('p');
+      lead.textContent = 'Uygulama acilisinda hata tespit edildi. Firebase verileriniz bu nedenle silinmis degildir.';
+      const detail = document.createElement('pre');
+      detail.textContent = errorText;
+      detail.style.cssText = 'text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px;background:#fff7ed;border-radius:8px;color:#9a3412;max-height:180px;overflow:auto;';
+      const foot = document.createElement('small');
+      foot.textContent = 'Teshis surumu: ' + gtVersion + ' | Hata metnini kopyalayarak paylasabilirsiniz.';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Hata bilgisini kopyala';
+      button.style.cssText = 'padding:10px 14px;margin-top:10px;cursor:pointer;';
+      button.addEventListener('click', async () => {
+        const report = gtFailLog.join('\n---\n');
+        try { await navigator.clipboard.writeText(report); button.textContent = 'Kopyalandi'; }
+        catch { button.textContent = 'Yukaridaki hata metnini secerek kopyalayin'; }
+      });
+      card.append(heading, lead, detail, foot, button);
+      gate.replaceChildren(card);
     }
-    window.addEventListener('error', event => {
-      if (event.target && event.target !== window) {
-        const src = event.target.src || event.target.href;
-        if (src) gtDisplayEarlyError('Kaynak yüklenemedi: ' + src);
-      } else if (event.message) {
-        gtDisplayEarlyError(event.message);
+    window.addEventListener('error', e => {
+      if (e.target && e.target !== window) {
+        const resource = e.target.src || e.target.href;
+        if (resource) gtExplainProblem('Kaynak yuklenemedi: ' + gtCleanSource(resource));
+        return;
       }
+      const locationInfo = e.filename
+        ? '\nDosya: ' + gtCleanSource(e.filename) + '\nSatir: ' + (e.lineno || '?') + ' / Sutun: ' + (e.colno || '?')
+        : '\nDosya bilgisi tarayici tarafindan saglanmadi.';
+      gtExplainProblem((e.message || e.error?.message || 'JavaScript hatasi') + locationInfo);
     }, true);
-    window.addEventListener('unhandledrejection', event => {
-      gtDisplayEarlyError(event.reason?.message || 'JavaScript modülü çalıştırılamadı.');
+    window.addEventListener('unhandledrejection', e => {
+      gtExplainProblem('Modul/Promise hatasi: ' + (e.reason?.stack || e.reason?.message || String(e.reason)));
     });
     setTimeout(async () => {
       const gate = document.getElementById('authGate');
-      if (window.__GT_BOOT_DONE__ || !gate || gate.hidden || !gate.textContent.includes('Bağlantı hazırlanıyor')) return;
-      const names = ['bootstrap.js','app.js','cloud.js','drive.js','integrity.js','filename.js','document-delete.mjs','invoice.mjs','reports.mjs','notification-feed.mjs'];
-      const problems = [];
-      await Promise.all(names.map(async file => {
+      if (window.__GT_BOOT_DONE__ || !gate || gate.hidden || gtFailLog.length) return;
+      const files = ['bootstrap.js','app.js','cloud.js','drive.js','integrity.js','filename.js','document-delete.mjs','invoice.mjs','reports.mjs','notification-feed.mjs'];
+      const bad = [];
+      await Promise.all(files.map(async name => {
         try {
-          const response = await fetch(file, { method:'HEAD', cache:'no-store' });
-          if (!response.ok) problems.push(file + ': HTTP ' + response.status);
-        } catch { problems.push(file + ': erişilemiyor'); }
+          const response = await fetch(name + '?probe=8_3', {cache:'no-store'});
+          if (!response.ok) bad.push(name + ' HTTP ' + response.status);
+          else if ((response.headers.get('content-type') || '').includes('text/html')) bad.push(name + ' JavaScript yerine HTML donuyor');
+        } catch { bad.push(name + ' erisilemiyor'); }
       }));
-      gtDisplayEarlyError(problems.length
-        ? 'Eksik/erişilemeyen dosyalar: ' + problems.join(', ')
-        : 'Dosyalar erişilebilir, ancak JavaScript başlatılamadı. Tarayıcı geliştirici araçları > Console bölümündeki ilk kırmızı hatayı kontrol edin.');
+      gtExplainProblem(bad.length ? 'Eksik/gecersiz moduller: ' + bad.join(', ') :
+        'Dosyalar sunucudan yanit veriyor; modul baslatilamadi. F12 > Console ilk kirmizi hatayi ve dosya adresini paylasin.');
     }, 12000);
   </script>
-  <script src="config.js"></script>
-  <script type="module" src="bootstrap.js"></script>
+  <script src="config.js?v=8_3"></script>
+  <script type="module" src="bootstrap.js?v=8_3"></script>
 </body>
 </html>
